@@ -90,6 +90,15 @@ const eventImages = {
   [EVENT_NOTES]: 'images/event-notes.png',
 };
 
+// Format a timezone offset in minutes (Tidepool convention, e.g. -420) as "UTC-7".
+function formatUtcOffset(offsetMinutes) {
+  const sign = offsetMinutes < 0 ? '-' : '+';
+  const abs = Math.abs(offsetMinutes);
+  const hours = Math.floor(abs / 60);
+  const minutes = abs % 60;
+  return `UTC${sign}${hours}${minutes ? `:${_.padStart(String(minutes), 2, '0')}` : ''}`;
+}
+
 class DailyPrintView extends PrintView {
   constructor(doc, data, opts) {
     super(doc, data, opts);
@@ -130,6 +139,10 @@ class DailyPrintView extends PrintView {
 
     this.chartsPerPage = opts.chartsPerPage;
     this.numDays = this.endpoints.activeDays;
+
+    // When enabled, each day is labeled with (and will be rendered in) the timezone offset
+    // held by the plurality of that day's data, mirroring the web daily view.
+    this.showTimezone = opts.showTimezone !== false;
 
     // render options
     this.bolusWidth = 3;
@@ -205,24 +218,31 @@ class DailyPrintView extends PrintView {
     this.chartsByDate = {};
     this.initialChartsByDate = {};
 
-    _.each(selectedDates, (date) => {
-      const dateData = this.aggregationsByDate.dataByDate[date];
+    if (this.showTimezone) {
+      // Re-derive the day rows from the (invariant) data: group every datum by the local
+      // date in its OWN offset. Each group renders as a 12a–12a window in that offset, so a
+      // 100%-single-offset date is one clean row and an offset change spills into its own row.
+      this.buildTimezoneRows(selectedDates);
+    } else {
+      _.each(selectedDates, (date) => {
+        const dateData = this.aggregationsByDate.dataByDate[date];
+        const timezoneOffset = moment.utc(date).tz(this.timezone).utcOffset();
 
-      const bounds = [
-        moment.utc(date).tz(this.timezone).valueOf(),
-        moment.utc(date).tz(this.timezone).add(1, 'day').valueOf(),
-      ];
+        const bounds = [
+          moment.utc(date).tz(this.timezone).valueOf(),
+          moment.utc(date).tz(this.timezone).add(1, 'day').valueOf(),
+        ];
+        const utcBounds = [
+          bounds[0] + getOffset(bounds[0], this.timezone) * MS_IN_MIN,
+          bounds[1] + getOffset(bounds[1], this.timezone) * MS_IN_MIN,
+        ];
 
-      const utcBounds = [
-        bounds[0] + getOffset(bounds[0], this.timezone) * MS_IN_MIN,
-        bounds[1] + getOffset(bounds[1], this.timezone) * MS_IN_MIN,
-      ];
+        processBasalSequencesForDate(dateData, utcBounds);
 
-      processBasalSequencesForDate(dateData, utcBounds);
-
-      this.chartsByDate[date] = { data: dateData, utcBounds, date };
-      this.initialChartsByDate[date] = _.cloneDeep(this.chartsByDate[date]);
-    });
+        this.chartsByDate[date] = { data: dateData, utcBounds, date, timezoneOffset, key: date };
+        this.initialChartsByDate[date] = _.cloneDeep(this.chartsByDate[date]);
+      });
+    }
 
     this.chartsPlaced = this.initialChartsPlaced = 0;
     this.chartIndex = this.initialChartIndex = 0;
@@ -230,18 +250,93 @@ class DailyPrintView extends PrintView {
     // kick off the dynamic calculation of chart area based on font sizes for header and footer
     this.setHeaderSize().setFooterSize().calculateChartMinimums(this.chartArea);
 
-    _.each(selectedDates, (date) => {
-      this.calculateDateChartHeight(this.chartsByDate[date]);
+    _.each(this.chartsByDate, (dateChart) => {
+      this.calculateDateChartHeight(dateChart);
     });
 
     this.deviceNamesHeader = this.generateDeviceNamesHeader();
 
-    while (this.chartsPlaced < selectedDates.length) {
+    while (this.chartsPlaced < _.keys(this.chartsByDate).length) {
       this.placeChartsOnPage();
     }
 
     _.each(this.chartsByDate, (dateChart) => {
       this.makeScales(dateChart);
+    });
+  }
+
+  // Merge every day's document-tz-bucketed data into per-type arrays sorted by time
+  // (built once, lazily). Used to re-collect data for a window in a different offset.
+  getAllDataByType() {
+    if (!this.allDataByType) {
+      const all = {};
+      _.forOwn(this.aggregationsByDate.dataByDate, (bucket) => {
+        _.forOwn(bucket, (arr, type) => {
+          if (_.isArray(arr) && type !== 'basalSequences') {
+            (all[type] = all[type] || []).push(...arr);
+          }
+        });
+      });
+      _.forOwn(all, arr => arr.sort((a, b) => a.normalTime - b.normalTime));
+      this.allDataByType = all;
+    }
+    return this.allDataByType;
+  }
+
+  // Re-derive the day rows from the invariant data, grouped by (local date in its own offset,
+  // offset). Each group becomes a 12a–12a window in that offset, ordered chronologically. The
+  // data is bounded to the selected report range; an offset change near the range start yields
+  // a leading "spillover" row. Each datum appears in exactly one row (data is invariant).
+  buildTimezoneRows(selectedDates) {
+    const docBounds = (date) => {
+      const b = [
+        moment.utc(date).tz(this.timezone).valueOf(),
+        moment.utc(date).tz(this.timezone).add(1, 'day').valueOf(),
+      ];
+      return [
+        b[0] + getOffset(b[0], this.timezone) * MS_IN_MIN,
+        b[1] + getOffset(b[1], this.timezone) * MS_IN_MIN,
+      ];
+    };
+    const spanStart = docBounds(selectedDates[0])[0];
+    const spanEnd = docBounds(_.last(selectedDates))[1];
+
+    const rows = {};
+    _.forOwn(this.getAllDataByType(), (arr, type) => {
+      _.each(arr, (d) => {
+        if (!_.isFinite(d.normalTime) || d.normalTime < spanStart || d.normalTime >= spanEnd) return;
+        const offset = _.isFinite(d.timezoneOffset)
+          ? d.timezoneOffset
+          : moment.utc(d.normalTime).tz(this.timezone).utcOffset();
+        const localDate = moment.utc(d.normalTime + offset * MS_IN_MIN).format('YYYY-MM-DD');
+        const key = `${localDate}__${offset}`;
+        if (!rows[key]) {
+          rows[key] = {
+            key,
+            date: localDate,
+            timezoneOffset: offset,
+            data: {},
+            utcBounds: [
+              moment.utc(localDate).valueOf() - offset * MS_IN_MIN,
+              moment.utc(localDate).add(1, 'day').valueOf() - offset * MS_IN_MIN,
+            ],
+          };
+        }
+        (rows[key].data[type] = rows[key].data[type] || []).push(d);
+      });
+    });
+
+    _.each(_.sortBy(_.values(rows), r => r.utcBounds[0]), (row) => {
+      const data = _.cloneDeep(row.data);
+      processBasalSequencesForDate(data, row.utcBounds);
+      this.chartsByDate[row.key] = {
+        data,
+        utcBounds: row.utcBounds,
+        date: row.date,
+        timezoneOffset: row.timezoneOffset,
+        key: row.key,
+      };
+      this.initialChartsByDate[row.key] = _.cloneDeep(this.chartsByDate[row.key]);
     });
   }
 
@@ -415,7 +510,7 @@ class DailyPrintView extends PrintView {
     return { count: lineCount, bolusesToRender, needsEllipsis };
   }
 
-  calculateDateChartHeight({ data, date }) {
+  calculateDateChartHeight({ data, key: chartKey }) {
     this.doc.fontSize(this.smallFontSize);
     const lineHeight = this.doc.currentLineHeight() * 1.25;
 
@@ -438,8 +533,8 @@ class DailyPrintView extends PrintView {
 
     const { bolusDetails: minBolusDetails } = this.chartMinimums;
 
-    this.chartsByDate[date].bolusDetailsHeight = _.max([minBolusDetails, bolusDetailsHeight]);
-    this.chartsByDate[date].chartHeight = _.max([total, totalGivenMaxBolusStack]);
+    this.chartsByDate[chartKey].bolusDetailsHeight = _.max([minBolusDetails, bolusDetailsHeight]);
+    this.chartsByDate[chartKey].chartHeight = _.max([total, totalGivenMaxBolusStack]);
 
     return this;
   }
@@ -601,7 +696,7 @@ class DailyPrintView extends PrintView {
       );
   }
 
-  renderSummary({ date, topEdge }) {
+  renderSummary({ date, topEdge, timezoneOffset }) {
     const smallIndent = this.margins.left + 4;
     const statsIndent = 6;
     const widthWithoutIndent = this.summaryArea.width - statsIndent;
@@ -628,14 +723,31 @@ class DailyPrintView extends PrintView {
     const { basal: totalBasal, bolus: totalBolus, insulin: totalOther } = _.get(stats, 'totalInsulin.data.raw', {});
     const totalInsulin = (totalBasal || 0) + (totalBolus || 0) + (totalOther || 0);
 
+    const dateText = moment(date, 'YYYY-MM-DD').format('ddd, MMM D, Y');
+    const showTz = this.showTimezone && _.isFinite(timezoneOffset);
+
     this.doc.fillColor('black')
       .fillOpacity(1)
       .font(this.boldFont)
       .fontSize(this.summaryHeaderFontSize)
-      .text(moment(date, 'YYYY-MM-DD').format('ddd, MMM D, Y'), this.margins.left, topEdge);
+      .text(dateText, this.margins.left, topEdge);
 
+    // Timezone offset on its own muted sub-line beneath the date, kept within the narrow
+    // summary column so it doesn't collide with the chart's x-axis labels.
+    let headerBottom = topEdge + this.doc.currentLineHeight();
+    if (showTz) {
+      const tzY = topEdge + this.doc.currentLineHeight() * 1.3; // gap below the date line
+      this.doc.font(this.font)
+        .fontSize(this.smallFontSize)
+        .fillColor('#6D6E71')
+        .text(formatUtcOffset(timezoneOffset), this.margins.left, tzY);
+      headerBottom = tzY + this.doc.currentLineHeight();
+      this.doc.fillColor('black').font(this.boldFont).fontSize(this.summaryHeaderFontSize);
+    }
+
+    const summaryTop = headerBottom + this.doc.currentLineHeight() * 0.5;
     const yPos = (function (doc) { // eslint-disable-line func-names
-      let value = topEdge + doc.currentLineHeight() * 1.5;
+      let value = summaryTop;
       return {
         current: () => (value),
         small: () => {
@@ -876,7 +988,7 @@ class DailyPrintView extends PrintView {
     return this;
   }
 
-  renderXAxes({ bolusDetailsHeight, topEdge, date }) {
+  renderXAxes({ bolusDetailsHeight, topEdge, key: chartKey }) {
     const {
       notesEtc,
       bgEtcChart,
@@ -900,7 +1012,7 @@ class DailyPrintView extends PrintView {
 
     // render x-axis for basalChart
     const bottomOfBasalChart = bottomOfBolusDetails + basalChart;
-    this.chartsByDate[date].bottomOfBasalChart = bottomOfBasalChart;
+    this.chartsByDate[chartKey].bottomOfBasalChart = bottomOfBasalChart;
 
     this.doc.moveTo(this.chartArea.leftEdge, bottomOfBasalChart)
       .lineTo(this.rightEdge, bottomOfBasalChart)
@@ -909,7 +1021,7 @@ class DailyPrintView extends PrintView {
     return this;
   }
 
-  renderYAxes({ bgScale, bottomOfBasalChart, utcBounds, date, topEdge, xScale }) {
+  renderYAxes({ bgScale, bottomOfBasalChart, utcBounds, key: chartKey, topEdge, xScale }) {
     const end = utcBounds[1];
     let current = utcBounds[0];
     const threeHrLocs = [current];
@@ -919,7 +1031,7 @@ class DailyPrintView extends PrintView {
         .valueOf();
       threeHrLocs.push(current);
     }
-    const chart = this.chartsByDate[date];
+    const chart = this.chartsByDate[chartKey];
     chart.bolusDetailPositions = Array(8);
     chart.bolusDetailWidths = Array(8);
 
@@ -938,9 +1050,13 @@ class DailyPrintView extends PrintView {
       if (i < 8) {
         chart.bolusDetailPositions[i] = xPos;
 
+        const hourLabel = (this.showTimezone && _.isFinite(chart.timezoneOffset))
+          ? moment.utc(loc + chart.timezoneOffset * MS_IN_MIN).format('ha').slice(0, -1)
+          : formatLocalizedFromUTC(loc, this.timePrefs, 'ha').slice(0, -1);
+
         this.doc.font(this.font).fontSize(this.smallFontSize)
           .text(
-            formatLocalizedFromUTC(loc, this.timePrefs, 'ha').slice(0, -1),
+            hourLabel,
             xPos,
             topEdge,
             { indent: 3 }

@@ -95,6 +95,7 @@ export function createPrintView(type, data, opts, doc) {
         summaryHeaderFontSize: 10,
         summaryWidthAsPercentage: 0.18,
         title: t('Daily Charts'),
+        showTimezone: _.get(opts, 'daily.showTimezone', true),
       });
       break;
 
