@@ -53,13 +53,13 @@ export default class CBGSlicesContainer extends PureComponent {
 
   UNSAFE_componentWillMount() {
     const { binSize, data } = this.props;
-    this.setState({ mungedData: mungeBGDataBins('cbg', binSize, data) });
+    this.setState({ mungedData: mungeBGDataBins('cbg', binSize, data, undefined, true) });
   }
 
   UNSAFE_componentWillReceiveProps(nextProps) {
     const { binSize, data } = nextProps;
     if (binSize !== this.props.binSize || data !== this.props.data) {
-      this.setState({ mungedData: mungeBGDataBins('cbg', binSize, data) });
+      this.setState({ mungedData: mungeBGDataBins('cbg', binSize, data, undefined, true) });
     }
   }
 

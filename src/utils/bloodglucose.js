@@ -406,8 +406,10 @@ export function calculateSmbgStatsForBin(binKey, binSize, data, outOfRange) {
  * @param {Array} outerQuantiles - Array of values to use for lower and upper quantiles
  * @returns munged bg bin data
  */
-export function mungeBGDataBins(bgType, binSize, data, outerQuantiles) {
-  const binned = _.groupBy(data, (d) => (findBinForTimeOfDay(binSize, d.msPer24)));
+export function mungeBGDataBins(bgType, binSize, data, outerQuantiles, useDeviceTime = false) {
+  // Bin by device-time-of-day (the datum's own offset) when requested, else the display tz.
+  const timeOfDay = (d) => ((useDeviceTime && _.isFinite(d.deviceMsPer24)) ? d.deviceMsPer24 : d.msPer24);
+  const binned = _.groupBy(data, (d) => (findBinForTimeOfDay(binSize, timeOfDay(d))));
   const outOfRanges = findOutOfRangeAnnotations(data);
   // we need *all* possible keys for TransitionMotion to work on enter/exit
   // and the range starts with binSize/2 because the keys are centered in each bin
@@ -417,8 +419,12 @@ export function mungeBGDataBins(bgType, binSize, data, outerQuantiles) {
   const valueExtractor = (d) => (d.value);
   const mungedData = [];
   for (let i = 0; i < binKeys.length; ++i) {
-    const values = _.map(_.get(binned, binKeys[i], []), valueExtractor);
-    mungedData.push(binCalculator(binKeys[i], binSize, values, outOfRanges, outerQuantiles));
+    const binData = _.get(binned, binKeys[i], []);
+    const values = _.map(binData, valueExtractor);
+    const bin = binCalculator(binKeys[i], binSize, values, outOfRanges, outerQuantiles);
+    // Debug: distribution of timezone offsets contributing to this bin.
+    bin.offsetCounts = _.countBy(binData, 'timezoneOffset');
+    mungedData.push(bin);
   }
   return mungedData;
 }

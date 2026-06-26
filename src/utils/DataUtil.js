@@ -918,6 +918,13 @@ export class DataUtil {
 
       if (normalizeAllFields || _.includes(fields, 'msPer24')) {
         d.msPer24 = getMsPer24(d.normalTime, timezoneName);
+
+        // Time-of-day in the datum's OWN (device) timezone offset, for binning the Trends
+        // view by device time rather than the single display timezone.
+        if (_.isFinite(d.timezoneOffset)) {
+          const deviceLocal = d.normalTime + d.timezoneOffset * MS_IN_MIN;
+          d.deviceMsPer24 = ((deviceLocal % MS_IN_DAY) + MS_IN_DAY) % MS_IN_DAY;
+        }
       }
 
       if (normalizeAllFields || _.includes(fields, 'localDate')) {
