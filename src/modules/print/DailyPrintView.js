@@ -170,6 +170,8 @@ class DailyPrintView extends PrintView {
       carbsStrikeLine: '#ADADAD',
       carbExchanges: '#FFB686',
       lightDividers: '#D8D8D8',
+      cbgBackfill: colors.gray10,
+      basalCgmUnavailable: colors.gray30,
     });
 
     this.rightEdge = this.margins.left + this.width;
