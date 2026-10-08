@@ -2322,6 +2322,18 @@ describe('DataUtil', () => {
       const nonTwiistAlarmOcclusion = { ...alarmOcclusion, origin: { name: 'non-twiist' } };
       const alarmTypeUnrecognized = { ...alarm, alarmType: 'foo', ...twiistOrigin };
 
+      const tandemSource = { source: 'Tandem' };
+      const tandemAlarmAutoOff = { ...alarm, alarmType: 'auto_off', ...tandemSource };
+      const tandemAlarmNoDelivery = { ...alarm, alarmType: 'no_delivery', ...tandemSource };
+      const tandemAlarmNoInsulin = { ...alarm, alarmType: 'no_insulin', ...tandemSource };
+      const tandemAlarmNoPower = { ...alarm, alarmType: 'no_power', ...tandemSource };
+      const tandemAlarmOcclusion = { ...alarm, alarmType: 'occlusion', ...tandemSource };
+      const tandemAlarmOverLimit = { ...alarm, alarmType: 'over_limit', ...tandemSource };
+      const tandemAlarmTypeUnrecognized = { ...alarm, alarmType: 'foo', ...tandemSource };
+      const tandemPumpSettingsOverride = {
+        ...siteChange, subType: 'pumpSettingsOverride', overrideType: 'sleep', ...tandemSource,
+      };
+
       const automatedSuspendBasal = new Types.DeviceEvent({
         deviceTime: '2018-02-01T01:00:00',
         subType: 'status',
@@ -2405,6 +2417,35 @@ describe('DataUtil', () => {
         expect(alarmTypeUnrecognized.tags).to.be.undefined;
         dataUtil.tagDatum(alarmTypeUnrecognized);
         expect(alarmTypeUnrecognized.tags.alarm).to.equal(false);
+      });
+
+      it('should tag a Tandem alarm with each of the full recognized alarm types', () => {
+        _.forEach([
+          [tandemAlarmAutoOff, 'auto_off'],
+          [tandemAlarmNoDelivery, 'no_delivery'],
+          [tandemAlarmNoInsulin, 'no_insulin'],
+          [tandemAlarmNoPower, 'no_power'],
+          [tandemAlarmOcclusion, 'occlusion'],
+          [tandemAlarmOverLimit, 'over_limit'],
+        ], ([datum, type]) => {
+          expect(datum.tags).to.be.undefined;
+          dataUtil.tagDatum(datum);
+          expect(datum.tags.alarm).to.equal(true);
+          expect(datum.tags[type]).to.equal(true);
+        });
+      });
+
+      it('should tag a Tandem alarm with an unrecognized alarmType as false', () => {
+        expect(tandemAlarmTypeUnrecognized.tags).to.be.undefined;
+        dataUtil.tagDatum(tandemAlarmTypeUnrecognized);
+        expect(tandemAlarmTypeUnrecognized.tags.alarm).to.equal(false);
+      });
+
+      it('should not add alarm-type tags to a non-alarm Tandem deviceEvent', () => {
+        expect(tandemPumpSettingsOverride.tags).to.be.undefined;
+        dataUtil.tagDatum(tandemPumpSettingsOverride);
+        expect(tandemPumpSettingsOverride.tags.alarm).to.be.undefined;
+        expect(tandemPumpSettingsOverride.tags.occlusion).to.be.undefined;
       });
     });
 

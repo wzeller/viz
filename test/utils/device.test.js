@@ -236,6 +236,25 @@ describe('device utility functions', () => {
     });
   });
 
+  describe('isTandemSource', () => {
+    it('should return `true` for a datum with source "Tandem"', () => {
+      expect(device.isTandemSource({ source: 'Tandem' })).to.be.true;
+    });
+
+    it('should be case-insensitive', () => {
+      expect(device.isTandemSource({ source: 'tandem' })).to.be.true;
+      expect(device.isTandemSource({ source: 'TANDEM' })).to.be.true;
+    });
+
+    it('should return `false` for a datum from another source', () => {
+      expect(device.isTandemSource({ source: 'Medtronic' })).to.be.false;
+    });
+
+    it('should return `false` for a datum without a source', () => {
+      expect(device.isTandemSource({})).to.be.false;
+    });
+  });
+
   describe('isLibreViewAPI', () => {
     it('should return `true` for a matching `origin.name`', () => {
       const nonMatching = { origin: { name: 'org.tidepool.abbott.libreview.partner.api.other' } };

@@ -64,6 +64,16 @@ export function isTwiistLoop(datum = {}) {
 }
 
 /**
+ * Check to see if a deviceEvent datum's `source` identifies it as coming
+ * from a Tandem pump. `source` is the same field AlarmTooltip already keys
+ * device-specific vocabulary off of (getPumpVocabulary(alarm.source)), so
+ * this is an established, already-relied-upon signal, not a new one.
+ */
+export function isTandemSource(datum = {}) {
+  return (/^tandem$/i).test(datum.source || '');
+}
+
+/**
  * Check to see if datum is from Control-IQ
  */
 export function isControlIQ(datum = {}) {
