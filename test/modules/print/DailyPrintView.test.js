@@ -1337,6 +1337,38 @@ describe('DailyPrintView', () => {
     });
   });
 
+  describe('renderAlarmsFootnote', () => {
+    it('should list twiist\'s narrower recognized alarm set when manufacturer is not tandem', () => {
+      doc = new Doc({ margin: MARGIN });
+      Renderer = new DailyPrintView(doc, {
+        ...data,
+        metaData: { ...data.metaData, latestPumpUpload: { manufacturer: 'twiist' } },
+      }, opts);
+
+      Renderer.renderAlarmsFootnote();
+
+      sinon.assert.calledWith(
+        Renderer.doc.text,
+        sinon.match(/Cassette Empty, Battery Empty, or Line Blocked/)
+      );
+    });
+
+    it('should list Tandem\'s full recognized alarm set when manufacturer is tandem', () => {
+      doc = new Doc({ margin: MARGIN });
+      Renderer = new DailyPrintView(doc, {
+        ...data,
+        metaData: { ...data.metaData, latestPumpUpload: { manufacturer: 'tandem' } },
+      }, opts);
+
+      Renderer.renderAlarmsFootnote();
+
+      sinon.assert.calledWith(
+        Renderer.doc.text,
+        sinon.match(/Pump Auto-Off, Insulin Delivery Stopped, Reservoir Empty, Battery Empty, Occlusion Detected, or Insulin Delivery Limit Exceeded/)
+      );
+    });
+  });
+
   describe('renderLegend', () => {
     it('should render the legend', () => {
       sinon.stub(Renderer, 'renderEventPath');

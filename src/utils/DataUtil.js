@@ -56,12 +56,8 @@ import {
   SITE_CHANGE_CANNULA,
   SITE_CHANGE,
   ALARM,
-  ALARM_NO_DELIVERY,
-  ALARM_AUTO_OFF,
-  ALARM_NO_INSULIN,
-  ALARM_NO_POWER,
-  ALARM_OCCLUSION,
-  ALARM_OVER_LIMIT,
+  TWIIST_RECOGNIZED_ALARM_TYPES,
+  TANDEM_RECOGNIZED_ALARM_TYPES,
   EVENT,
   EVENT_HEALTH,
   EVENT_NOTES,
@@ -866,15 +862,17 @@ export class DataUtil {
 
       if (d.subType === 'alarm' && (isTwiistLoop(d) || isTandemSource(d))) {
         // Twiist's real firmware alarm set is narrower than Tandem's — only
-        // 3 conditions are surfaced today (matches the hard-coded "Cassette
-        // Empty, Battery Empty, or Line Blocked" copy elsewhere). Tandem
-        // supports the full alarm taxonomy. Gating on subType === 'alarm'
-        // first (rather than tagging any deviceEvent from a recognized
-        // manufacturer) avoids stamping always-false alarm-type keys onto
-        // unrelated deviceEvents, e.g. a pumpSettingsOverride.
+        // 3 conditions are surfaced today. Tandem supports the full alarm
+        // taxonomy. These lists are the single source of truth, also used
+        // to generate the print footnote and events tooltip copy — update
+        // them in one place (constants.js) and both stay in sync. Gating on
+        // subType === 'alarm' first (rather than tagging any deviceEvent
+        // from a recognized manufacturer) avoids stamping always-false
+        // alarm-type keys onto unrelated deviceEvents, e.g. a
+        // pumpSettingsOverride.
         const recognizedAlarmTypes = isTwiistLoop(d)
-          ? [ALARM_NO_INSULIN, ALARM_NO_POWER, ALARM_OCCLUSION]
-          : [ALARM_AUTO_OFF, ALARM_NO_DELIVERY, ALARM_NO_INSULIN, ALARM_NO_POWER, ALARM_OCCLUSION, ALARM_OVER_LIMIT];
+          ? TWIIST_RECOGNIZED_ALARM_TYPES
+          : TANDEM_RECOGNIZED_ALARM_TYPES;
 
         d.tags = {
           ...d.tags,

@@ -70,6 +70,8 @@ import {
   PREPRANDIAL,
   SCHEDULED_DELIVERY,
   SLEEP,
+  TWIIST_RECOGNIZED_ALARM_TYPES,
+  TANDEM_RECOGNIZED_ALARM_TYPES,
 } from '../../utils/constants';
 
 import {
@@ -89,6 +91,14 @@ const eventImages = {
   [EVENT_PHYSICAL_ACTIVITY]: 'images/event-physical_activity.png',
   [EVENT_NOTES]: 'images/event-notes.png',
 };
+
+// 'A, B, or C' — reads naturally for both twiist's 3-item and Tandem's
+// 6-item recognized-alarm lists.
+function joinWithOr(items) {
+  if (items.length <= 1) return items.join('');
+  if (items.length === 2) return `${items[0]} or ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}`;
+}
 
 class DailyPrintView extends PrintView {
   constructor(doc, data, opts) {
@@ -591,11 +601,21 @@ class DailyPrintView extends PrintView {
 
   renderAlarmsFootnote() {
     this.resetText();
+
+    // Which alarms are recognized/shown varies by device — derive the list
+    // from the same source DataUtil uses to tag them (constants.js), so this
+    // copy can't go stale relative to what's actually being tagged again.
+    const recognizedTypes = this.manufacturer === 'tandem'
+      ? TANDEM_RECOGNIZED_ALARM_TYPES
+      : TWIIST_RECOGNIZED_ALARM_TYPES;
+    const deviceLabels = getPumpVocabulary(this.manufacturer);
+    const alarmNames = joinWithOr(recognizedTypes.map(type => deviceLabels[type]));
+
     this.doc
       .fontSize(this.smallFontSize)
       .fillColor(colors.gray50)
       .text(
-        t('1 - The Pump Alarm icon indicates that one of the following alarms occurred: Cassette Empty, Battery Empty, or Line Blocked. Please note that pump alarms are only shown for the twiist AID system and not all alarms are shown.'),
+        t('1 - The Pump Alarm icon indicates that one of the following alarms occurred: {{alarmNames}}. Please note that not all pump alarms are shown, and the alarms shown vary by device.', { alarmNames }),
         this.leftEdge,
         this.chartFootnotesYPos
       );

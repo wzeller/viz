@@ -88,6 +88,23 @@ export const ALARM_NO_POWER = 'no_power';
 export const ALARM_OCCLUSION = 'occlusion';
 export const ALARM_OVER_LIMIT = 'over_limit';
 
+// Single source of truth for which alarm types each device surfaces —
+// imported by both DataUtil (tagging/recognition) and the print/tooltip
+// copy describing them, so the two can never drift out of sync again.
+export const TWIIST_RECOGNIZED_ALARM_TYPES = [
+  ALARM_NO_INSULIN,
+  ALARM_NO_POWER,
+  ALARM_OCCLUSION,
+];
+export const TANDEM_RECOGNIZED_ALARM_TYPES = [
+  ALARM_AUTO_OFF,
+  ALARM_NO_DELIVERY,
+  ALARM_NO_INSULIN,
+  ALARM_NO_POWER,
+  ALARM_OCCLUSION,
+  ALARM_OVER_LIMIT,
+];
+
 export const EVENT = 'event';
 export const EVENT_HEALTH = 'health';
 export const EVENT_NOTES = 'notes';
